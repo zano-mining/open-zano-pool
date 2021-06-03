@@ -178,59 +178,60 @@ func (u *PayoutsProcessor) process() {
 
     // split the tx fee evenly over all bulk-tx recipients
     // those first in line are a little unlucky
-    nPayees := uint64(len(xferdests))
-    feePerPayee := baseFee / nPayees
-    feeRemainder := int64(baseFee % nPayees)
-    for k := 0; k < len(xferdests); k++ {
-      extra := uint64(0)
-      if feeRemainder > 0 {
-        extra = 1
-        feeRemainder = feeRemainder - 1
+    if len(tempAmounts) > 0 {
+      nPayees := uint64(len(xferdests))
+      feePerPayee := baseFee / nPayees
+      feeRemainder := int64(baseFee % nPayees)
+      for k := 0; k < len(xferdests); k++ {
+        extra := uint64(0)
+        if feeRemainder > 0 {
+          extra = 1
+          feeRemainder = feeRemainder - 1
+        }
+        xferdests[k].Amount = xferdests[k].Amount - feePerPayee - extra
       }
-      xferdests[k].Amount = xferdests[k].Amount - feePerPayee - extra
-    }
   
-    txHash, err := u.rpc_wallet.SendTransaction(xferdests, baseFee, 0)
-    if err != nil {
-      log.Printf("Failed to send payment to %v. Check outgoing tx for %s in block explorer and docs/PAYOUTS.md",
-        xferdests, txHash)
-      u.halt = true
-      u.lastFail = err
-      return
-    }
-    
-    for login, amount := range tempAmounts {
-		  // Lock payments for current payout
-  		err = u.backend.LockPayouts(login, amount)
-  		if err != nil {
-  			log.Printf("Failed to lock payment for %s: %v", login, err)
-  			u.halt = true
-	  		u.lastFail = err
-		  	break
-	  	}
-	  	log.Printf("Locked payment for %s, %v Shannon", login, amount)
-
-	  	// Debit miner's balance and update stats
-   		err = u.backend.UpdateBalance(login, amount)
-	  	if err != nil {
-	  		log.Printf("Failed to update balance for %s, %v Shannon: %v", login, amount, err)
-	  		u.halt = true
-	  		u.lastFail = err
-	  		break
-	  	}
-
-      // Log transaction hash
-      err = u.backend.WritePayment(login, txHash, amount)
+      txHash, err := u.rpc_wallet.SendTransaction(xferdests, baseFee, 0)
       if err != nil {
-        log.Printf("Failed to log payment data for %s, %v Shannon, tx: %s: %v", login, amount, txHash, err)
-       u.halt = true
-       u.lastFail = err
-       break
-     }
+        log.Printf("Failed to send payment to %v. Check outgoing tx for %s in block explorer and docs/PAYOUTS.md",
+          xferdests, txHash)
+        u.halt = true
+        u.lastFail = err
+        return
+      }
+      for login, amount := range tempAmounts {
+  		  // Lock payments for current payout
+    		err = u.backend.LockPayouts(login, amount)
+     		if err != nil {
+  	  		log.Printf("Failed to lock payment for %s: %v", login, err)
+  		  	u.halt = true
+	  		  u.lastFail = err
+		  	  break
+	  	  }
+	  	  log.Printf("Locked payment for %s, %v Shannon", login, amount)
+
+	  	  // Debit miner's balance and update stats
+   		  err = u.backend.UpdateBalance(login, amount)
+	  	  if err != nil {
+	  		  log.Printf("Failed to update balance for %s, %v Shannon: %v", login, amount, err)
+	  		  u.halt = true
+	  		  u.lastFail = err
+	  		  break
+	  	  }
+
+        // Log transaction hash
+        err = u.backend.WritePayment(login, txHash, amount)
+        if err != nil {
+          log.Printf("Failed to log payment data for %s, %v Shannon, tx: %s: %v", login, amount, txHash, err)
+          u.halt = true
+          u.lastFail = err
+        break
+      }
     
-      minersPaid++
-      totalAmount.Add(totalAmount, big.NewInt(amount))
-      log.Printf("Paid %v Shannon to Standard Address: %v, TxHash: %v", amount, login, txHash)
+        minersPaid++
+        totalAmount.Add(totalAmount, big.NewInt(amount))
+        log.Printf("Paid %v Shannon to Standard Address: %v, TxHash: %v", amount, login, txHash)
+      }
     }
   
     for login, amount := range tempAmountsIntegrated {
