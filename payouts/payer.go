@@ -244,6 +244,15 @@ func (u *PayoutsProcessor) process() {
       }
       log.Printf("Locked payment for %s, %v Shannon", login, amount)
 
+      // Debit miner's balance and update stats
+      err = u.backend.UpdateBalance(login, amount)
+      if err != nil {
+        log.Printf("Failed to update balance for %s, %v Shannon: %v", login, amount, err)
+        u.halt = true
+        u.lastFail = err
+        break
+      }
+  
       integdest := integdests[login]
       txHash, err := u.rpc_wallet.SendTransaction([]rpc.TransferDestination{integdest}, baseFee, 0)
       if err != nil {
@@ -252,15 +261,6 @@ func (u *PayoutsProcessor) process() {
         u.halt = true
         u.lastFail = err
         return
-      }
-  
-      // Debit miner's balance and update stats
-      err = u.backend.UpdateBalance(login, amount)
-      if err != nil {
-        log.Printf("Failed to update balance for %s, %v Shannon: %v", login, amount, err)
-        u.halt = true
-        u.lastFail = err
-        break
       }
 
       // Log transaction hash
