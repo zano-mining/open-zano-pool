@@ -215,7 +215,7 @@ func (u *BlockUnlocker) handleBlock(block *rpc.GetBlockReply, candidate *storage
 	candidate.Height = correctHeight
 	reward := new(big.Int).SetUint64(block.Reward)
 
-	candidate.Orphan = false
+	candidate.Orphan = block.OrphanStatus
 	candidate.Hash = block.Hash
 	candidate.Reward = reward
 	return nil
