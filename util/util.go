@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"time"
 
-  "github.com/ethereum/go-ethereum/common"
-  "github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/common/math"
 )
 
@@ -47,7 +47,7 @@ func GetTargetHexFromString(diff string) string {
   diff1 := new(big.Int).Div(u256max, difficulty)
   return string(hexutil.Encode(diff1.Bytes()))
 }
-  
+
 func GetTargetHex(diff int64) string {
 	difficulty := big.NewInt(diff)
 	diff1 := new(big.Int).Div(u256max, difficulty)

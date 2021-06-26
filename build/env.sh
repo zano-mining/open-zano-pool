@@ -1,3 +1,4 @@
+
 #!/bin/sh
 
 set -e
@@ -10,7 +11,7 @@ fi
 # Create fake Go workspace if it doesn't exist yet.
 workspace="$PWD/build/_workspace"
 root="$PWD"
-zanodir="$workspace/src/github.com/zano-mining"
+zanodir="$workspace/src/github.com/hostup"
 if [ ! -L "$zanodir/open-zano-pool" ]; then
     mkdir -p "$zanodir"
     cd "$zanodir"

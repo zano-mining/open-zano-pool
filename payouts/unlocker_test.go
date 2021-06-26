@@ -5,8 +5,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/zano-mining/open-zano-pool/rpc"
-	"github.com/zano-mining/open-zano-pool/storage"
+	"github.com/hostup/open-zano-pool/rpc"
+	"github.com/hostup/open-zano-pool/storage"
 )
 
 func TestMain(m *testing.M) {
@@ -19,7 +19,7 @@ func TestCalculateRewards(t *testing.T) {
 	expectedRewards := map[string]int64{"0x0": 4877996431, "0x1": 97559929, "0x2": 24389982, "0x3": 48780, "0x4": 4878}
 	totalShares := int64(1025011)
 
-	rewards := calculateRewardsForShares(shares, totalShares, blockReward)
+	rewards, percent := calculateRewardsForShares(shares, totalShares, blockReward)
 	expectedTotalAmount := int64(5000000000)
 
 	totalAmount := int64(0)
@@ -27,7 +27,7 @@ func TestCalculateRewards(t *testing.T) {
 		totalAmount += amount
 
 		if expectedRewards[login] != amount {
-			t.Errorf("Amount for %v must be equal to %v vs %v", login, expectedRewards[login], amount)
+			t.Errorf("Amount for %v must be equal to %v vs %v , %v", login, expectedRewards[login], amount, percent)
 		}
 	}
 	if totalAmount != expectedTotalAmount {
@@ -75,9 +75,8 @@ func TestGetUncleReward(t *testing.T) {
 		4: "2500000000000000000",
 		5: "1875000000000000000",
 		6: "1250000000000000000",
-		7: "625000000000000000",
 	}
-	for i := int64(1); i < 8; i++ {
+	for i := int64(1); i < 7; i++ {
 		rewards[i] = getUncleReward(1, i+1).String()
 	}
 	for i, reward := range rewards {

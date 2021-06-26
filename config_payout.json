@@ -1,0 +1,133 @@
+{
+	"threads": 2,
+	"coin": "zano",
+	"name": "main",
+	"pplns": 1000000,
+	"coin-name":"zano",
+
+	"proxy": {
+		"enabled": false,
+		"listen": "0.0.0.0:8888",
+		"limitHeadersSize": 1024,
+		"limitBodySize": 256,
+		"behindReverseProxy": false,
+		"blockRefreshInterval": "120ms",
+		"stateUpdateInterval": "3s",
+		"difficulty": 4000000000,
+		"hashrateExpiration": "3h",
+
+		"healthCheck": true,
+		"maxFails": 100,
+
+		"stratum": {
+			"enabled": false,
+			"listen": "0.0.0.0:8008",
+			"timeout": "120s",
+			"maxConn": 8192
+		},
+		"stratum_nice_hash": {
+			"enabled": false,
+			"listen": "0.0.0.0:8089",
+			"timeout": "120s",
+			"maxConn": 8192
+		},
+
+		"policy": {
+			"workers": 8,
+			"resetInterval": "60m",
+			"refreshInterval": "1m",
+
+			"banning": {
+				"enabled": true,
+				"ipset": "blacklist",
+				"timeout": 300,
+				"invalidPercent": 30,
+				"checkThreshold": 30,
+				"malformedLimit": 50
+			},
+			"limits": {
+				"enabled": true,
+				"limit": 30,
+				"grace": "5m",
+				"limitJump": 10
+			}
+		}
+	},
+
+	"api": {
+		"enabled": false,
+		"purgeOnly": false,
+		"purgeInterval": "10m",
+		"listen": "0.0.0.0:8081",
+		"statsCollectInterval": "5s",
+		"hashrateWindow": "30m",
+		"hashrateLargeWindow": "3h",
+		"luckWindow": [64, 128, 256],
+		"payments": 30,
+		"blocks": 50
+	},
+
+	"upstreamCheckInterval": "5s",
+	"upstream": [
+		{
+			"name": "main",
+			"url": "http://localhost:11211/json_rpc",
+			"timeout": "10s"
+		},
+		{
+			"name": "backup",
+			"url": "http://localhost:11211/json_rpc",
+			"timeout": "10s"
+		}
+	],
+
+	"redis": {
+		"endpoint": "localhost:6379",
+		"poolSize": 10,
+		"database": 8,
+		"password": ""
+	},
+
+	"unlocker": {
+		"enabled": false,
+		"poolFee": 0.9,
+		"poolFeeAddress": "ZxCwg6nmW8QPoa6qZomGwXhP4eUcCLN3waKtyTZkKtsyC9rZwPGo7LC1CGnURw3rPvLzuje86fPNTVZmEJUt6gvR3AhkohMHY",
+		"donate": false,
+		"depth": 120,
+		"immatureDepth": 20,
+		"keepTxFees": true,
+		"interval": "15m",
+		"daemon": "http://127.0.0.1:11211/json_rpc",
+		"timeout": "10s"
+	},
+
+	"payouts": {
+		"enabled": true,
+		"requirePeers": 1,
+		"interval": "5s",
+		"daemon": "http://127.0.0.1:11211/json_rpc",
+                "wallet": "http://127.0.0.1:11212/json_rpc",
+		"timeout": "10s",
+		"address": "ZxCwg6nmW8QPoa6qZomGwXhP4eUcCLN3waKtyTZkKtsyC9rZwPGo7LC1CGnURw3rPvLzuje86fPNTVZmEJUt6gvR3AhkohMHY",
+		"gas": "21000",
+		"gasPrice": "10000000000",
+		"autoGas": true,
+		"keepNwFees": false,
+		"nwTxGas": "21000",
+		"nwTxGasPrice": "10000000000",
+		"threshold": 100000,
+		"bgsave": false
+	},
+
+	"exchange": {
+		"enabled": false,
+		"url": "https://api.coinmarketcap.com/v1/ticker/?convert=INR",
+		"timeout": "50s",
+		"refreshInterval": "1800s"
+	},
+
+	"newrelicEnabled": false,
+	"newrelicName": "PROXY01_ETH_main",
+	"newrelicKey": "b71dca87-1476-4a19-a026-2656a954c369",
+	"newrelicVerbose": false
+}

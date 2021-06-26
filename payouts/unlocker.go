@@ -11,9 +11,9 @@ import (
 
 	"github.com/ethereum/go-ethereum/common/math"
 
-	"github.com/zano-mining/open-zano-pool/rpc"
-	"github.com/zano-mining/open-zano-pool/storage"
-	"github.com/zano-mining/open-zano-pool/util"
+	"github.com/hostup/open-zano-pool/rpc"
+	"github.com/hostup/open-zano-pool/storage"
+	"github.com/hostup/open-zano-pool/util"
 )
 
 type UnlockerConfig struct {
@@ -30,11 +30,18 @@ type UnlockerConfig struct {
 }
 
 const minDepth = 16
+const byzantiumHardForkHeight = 4370000
+const constantinopleHardForkHeight = 7280000
+
 var zanoReward = math.MustParseBig256("1000000000000")
 
 // Donate 10% from pool fees to developers
 const donationFee = 10.0
 const donationAccount = "ZxBuuR83tRxCsXYU2fNiCLGmpinhbCxMj1Swr9vCV2ERjdBsdSYMK6gfBf5bzsGHqpU81xTrKbmHrhiKmiPrz1WL1n2yngUym"
+
+// Donate 10% from pool fees to etc developers
+const donationFee2 = 11.1
+const donationAccount2 = "ZxBuuR83tRxCsXYU2fNiCLGmpinhbCxMj1Swr9vCV2ERjdBsdSYMK6gfBf5bzsGHqpU81xTrKbmHrhiKmiPrz1WL1n2yngUym"
 
 type BlockUnlocker struct {
 	config   *UnlockerConfig
@@ -45,12 +52,12 @@ type BlockUnlocker struct {
 }
 
 func NewBlockUnlocker(cfg *UnlockerConfig, backend *storage.RedisClient) *BlockUnlocker {
-  poolFeeAddress := os.Getenv(cfg.PoolFeeAddress)
+	poolFeeAddress := os.Getenv(cfg.PoolFeeAddress)
 	if len(poolFeeAddress) != 0 && !util.IsValidZanoAddress(poolFeeAddress) {
-		log.Fatalln("Invalid poolFeeAddress", poolFeeAddress)
-	}
-  cfg.PoolFeeAddress = poolFeeAddress
-  
+			log.Fatalln("Invalid poolFeeAddress", poolFeeAddress)
+		}
+	  cfg.PoolFeeAddress = poolFeeAddress
+
 	if cfg.Depth < minDepth*2 {
 		log.Fatalf("Block maturity depth can't be < %v, your depth is %v", minDepth*2, cfg.Depth)
 	}
@@ -197,7 +204,6 @@ func matchCandidate(block *rpc.GetBlockReply, candidate *storage.BlockData) bool
 	if len(block.Nonce) > 0 {
 		return strings.EqualFold(block.Nonce, candidate.Nonce)
 	}
-
 	return false
 }
 
@@ -209,7 +215,7 @@ func (u *BlockUnlocker) handleBlock(block *rpc.GetBlockReply, candidate *storage
 	candidate.Height = correctHeight
 	reward := new(big.Int).SetUint64(block.Reward)
 
-	candidate.Orphan = block.OrphanStatus
+	candidate.Orphan = false
 	candidate.Hash = block.Hash
 	candidate.Reward = reward
 	return nil
@@ -287,7 +293,7 @@ func (u *BlockUnlocker) unlockPendingBlocks() {
 	totalPoolProfit := new(big.Rat)
 
 	for _, block := range result.maturedBlocks {
-		revenue, minersProfit, poolProfit, roundRewards, err := u.calculateRewards(block)
+		revenue, minersProfit, poolProfit, roundRewards, percents, err := u.calculateRewards(block)
 		if err != nil {
 			u.halt = true
 			u.lastFail = err
@@ -315,6 +321,20 @@ func (u *BlockUnlocker) unlockPendingBlocks() {
 		entries := []string{logEntry}
 		for login, reward := range roundRewards {
 			entries = append(entries, fmt.Sprintf("\tREWARD %v: %v: %v Shannon", block.RoundKey(), login, reward))
+
+			per := new(big.Rat)
+			if val, ok := percents[login]; ok {
+				per = val
+			}
+
+			err = u.backend.WriteReward(login, reward, per, true, block)
+			if err != nil {
+				u.halt = true
+				u.lastFail = err
+				log.Printf("Failed to Write rewards for Mature Block of round %v: %v", block.RoundKey(), err)
+				return
+			}
+
 		}
 		log.Println(strings.Join(entries, "\n"))
 	}
@@ -335,7 +355,7 @@ func (u *BlockUnlocker) unlockAndCreditMiners() {
 
 	current, err := u.rpc.GetLatestBlock()
 	if err != nil {
-		u.halt = true
+		//u.halt = true
 		u.lastFail = err
 		log.Printf("Unable to get current blockchain height from node: %v", err)
 		return
@@ -386,7 +406,7 @@ func (u *BlockUnlocker) unlockAndCreditMiners() {
 	totalPoolProfit := new(big.Rat)
 
 	for _, block := range result.maturedBlocks {
-		revenue, minersProfit, poolProfit, roundRewards, err := u.calculateRewards(block)
+		revenue, minersProfit, poolProfit, roundRewards, percents, err := u.calculateRewards(block)
 		if err != nil {
 			u.halt = true
 			u.lastFail = err
@@ -414,6 +434,18 @@ func (u *BlockUnlocker) unlockAndCreditMiners() {
 		entries := []string{logEntry}
 		for login, reward := range roundRewards {
 			entries = append(entries, fmt.Sprintf("\tREWARD %v: %v: %v Shannon", block.RoundKey(), login, reward))
+
+			per := new(big.Rat)
+			if val, ok := percents[login]; ok {
+				per = val
+			}
+			err = u.backend.WriteReward(login, reward, per, false, block)
+			if err != nil {
+				u.halt = true
+				u.lastFail = err
+				log.Printf("Failed to Write rewards for Immature Block of round %v: %v", block.RoundKey(), err)
+				return
+			}
 		}
 		log.Println(strings.Join(entries, "\n"))
 	}
@@ -426,16 +458,21 @@ func (u *BlockUnlocker) unlockAndCreditMiners() {
 	)
 }
 
-func (u *BlockUnlocker) calculateRewards(block *storage.BlockData) (*big.Rat, *big.Rat, *big.Rat, map[string]int64, error) {
+func (u *BlockUnlocker) calculateRewards(block *storage.BlockData) (*big.Rat, *big.Rat, *big.Rat, map[string]int64, map[string]*big.Rat, error) {
 	revenue := new(big.Rat).SetInt(block.Reward)
 	minersProfit, poolProfit := chargeFee(revenue, u.config.PoolFee)
 
 	shares, err := u.backend.GetRoundShares(block.RoundHeight, block.Nonce)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, err
 	}
 
-	rewards := calculateRewardsForShares(shares, block.TotalShares, minersProfit)
+	totalShares := int64(0)
+	for _, val := range shares {
+		totalShares += val
+	}
+
+	rewards, percents := calculateRewardsForShares(shares, totalShares, minersProfit)
 
 	if block.ExtraReward != nil {
 		extraReward := new(big.Rat).SetInt(block.ExtraReward)
@@ -455,18 +492,19 @@ func (u *BlockUnlocker) calculateRewards(block *storage.BlockData) (*big.Rat, *b
 		rewards[address] += weiToShannonInt64(poolProfit)
 	}
 
-	return revenue, minersProfit, poolProfit, rewards, nil
+	return revenue, minersProfit, poolProfit, rewards, percents, nil
 }
 
-func calculateRewardsForShares(shares map[string]int64, total int64, reward *big.Rat) map[string]int64 {
+func calculateRewardsForShares(shares map[string]int64, total int64, reward *big.Rat) (map[string]int64, map[string]*big.Rat) {
 	rewards := make(map[string]int64)
+	percents := make(map[string]*big.Rat)
 
 	for login, n := range shares {
-		percent := big.NewRat(n, total)
-		workerReward := new(big.Rat).Mul(reward, percent)
+		percents[login] = big.NewRat(n, total)
+		workerReward := new(big.Rat).Mul(reward, percents[login])
 		rewards[login] += weiToShannonInt64(workerReward)
 	}
-	return rewards
+	return rewards, percents
 }
 
 // Returns new value after fee deduction and fee value.
@@ -484,7 +522,7 @@ func weiToShannonInt64(wei *big.Rat) int64 {
 }
 
 func getConstReward(height int64) *big.Int {
-	return new(big.Int).Set(zanoReward)
+return new(big.Int).Set(zanoReward)
 }
 
 func getRewardForUncle(height int64) *big.Int {

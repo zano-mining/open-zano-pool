@@ -11,8 +11,8 @@ import (
 
 	"github.com/gorilla/mux"
 
-	"github.com/zano-mining/open-zano-pool/storage"
-	"github.com/zano-mining/open-zano-pool/util"
+	"github.com/hostup/open-zano-pool/storage"
+	"github.com/hostup/open-zano-pool/util"
 )
 
 type ApiConfig struct {
@@ -174,6 +174,8 @@ func (s *ApiServer) StatsIndex(w http.ResponseWriter, r *http.Request) {
 		reply["maturedTotal"] = stats["maturedTotal"]
 		reply["immatureTotal"] = stats["immatureTotal"]
 		reply["candidatesTotal"] = stats["candidatesTotal"]
+		reply["exchangedata"] = stats["exchangedata"]
+		//reply["nShares"] = stats["nShares"]
 	}
 
 	err = json.NewEncoder(w).Encode(reply)
@@ -238,6 +240,7 @@ func (s *ApiServer) PaymentsIndex(w http.ResponseWriter, r *http.Request) {
 	if stats != nil {
 		reply["payments"] = stats["payments"]
 		reply["paymentsTotal"] = stats["paymentsTotal"]
+		reply["exchangedata"] = stats["exchangedata"]
 	}
 
 	err := json.NewEncoder(w).Encode(reply)
@@ -255,6 +258,8 @@ func (s *ApiServer) AccountIndex(w http.ResponseWriter, r *http.Request) {
 	s.minersMu.Lock()
 	defer s.minersMu.Unlock()
 
+	generalstats := s.getStats()
+
 	reply, ok := s.miners[login]
 	now := util.MakeTimestamp()
 	cacheIntv := int64(s.statsIntv / time.Millisecond)
@@ -267,26 +272,27 @@ func (s *ApiServer) AccountIndex(w http.ResponseWriter, r *http.Request) {
 		}
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			log.Printf("Failed to fetch stats from backend: %v", err)
+			log.Printf("Failed to fetch stats from backend -While checking whether miner exist: %v", err)
 			return
 		}
 
 		stats, err := s.backend.GetMinerStats(login, s.config.Payments)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			log.Printf("Failed to fetch stats from backend: %v", err)
+			log.Printf("Failed to fetch stats from backend  -While getting miner status: %v", err)
 			return
 		}
 		workers, err := s.backend.CollectWorkersStats(s.hashrateWindow, s.hashrateLargeWindow, login)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			log.Printf("Failed to fetch stats from backend: %v", err)
+			log.Printf("Failed to fetch stats from backend -While collecting worker status: %v", err)
 			return
 		}
 		for key, value := range workers {
 			stats[key] = value
 		}
 		stats["pageSize"] = s.config.Payments
+		stats["exchangedata"] = generalstats["exchangedata"]
 		reply = &Entry{stats: stats, updatedAt: now}
 		s.miners[login] = reply
 	}

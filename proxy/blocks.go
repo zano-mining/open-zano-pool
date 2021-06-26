@@ -3,14 +3,14 @@ package proxy
 import (
 	"log"
 	"math/big"
-  "strconv"
+	"strconv"
   "strings"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/zano-mining/open-zano-pool/rpc"
-  "github.com/zano-mining/open-zano-pool/util"
+	"github.com/hostup/open-zano-pool/rpc"
+	"github.com/hostup/open-zano-pool/util"
 )
 
 const maxBacklog = 3
@@ -48,21 +48,19 @@ func (b Block) Nonce() uint64            { return b.nonce }
 func (b Block) MixDigest() common.Hash   { return b.mixDigest }
 func (b Block) NumberU64() uint64        { return b.number }
 
+
 func (s *ProxyServer) fetchBlockTemplate() {
 	r := s.rpc()
 	t := s.currentBlockTemplate()
 	replyLastBlock, err := r.GetLatestBlock()
-
 	if err != nil {
 		log.Printf("Error while refreshing block template on %s: %s", r.Name, err)
 		return
 	}
-    
 	// No need to update, we have fresh job
 	if t != nil && t.PrevHash == replyLastBlock.Hash {
 		return
 	}
-
   reply, err := r.GetWork(s.config.Proxy.Address)
   if err != nil {
     log.Printf("Error while refreshing block template on %s: %s", r.Name, err)
@@ -70,8 +68,8 @@ func (s *ProxyServer) fetchBlockTemplate() {
   }
 
   log.Printf("eth_getWork: %v", reply)
-  
-  diff := util.TargetHexToDiff(reply[2])
+
+	diff := util.TargetHexToDiff(reply[2])
 	height, err := strconv.ParseUint(strings.Replace(reply[3], "0x", "", -1), 16, 64)
 
 	pendingReply := &rpc.GetBlockReplyPart{
@@ -108,5 +106,9 @@ func (s *ProxyServer) fetchBlockTemplate() {
 	// Stratum
 	if s.config.Proxy.Stratum.Enabled {
 		go s.broadcastNewJobs()
+	}
+
+	if s.config.Proxy.StratumNiceHash.Enabled {
+		go s.broadcastNewJobsNH()
 	}
 }

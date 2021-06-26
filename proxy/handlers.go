@@ -4,8 +4,8 @@ import (
 	"log"
 	"regexp"
 
-	"github.com/zano-mining/open-zano-pool/rpc"
-	"github.com/zano-mining/open-zano-pool/util"
+	"github.com/hostup/open-zano-pool/rpc"
+	"github.com/hostup/open-zano-pool/util"
 )
 
 // Allow only lowercase hexadecimal with 0x prefix
@@ -19,12 +19,14 @@ func (s *ProxyServer) handleLoginRPC(cs *Session, params []string, id string) (b
 		return false, &ErrorReply{Code: -1, Message: "Invalid params"}
 	}
 
+	//Parse email Id here
+	//TODO: LOGIN CHECK OF VALID ID
 	login := params[0]
 	if !util.IsValidZanoAddress(login) {
 		return false, &ErrorReply{Code: -1, Message: "Invalid login"}
 	}
 	if !s.policy.ApplyLoginPolicy(login, cs.ip) {
-		return false, &ErrorReply{Code: -1, Message: "You are blacklisted"}
+		return false, &ErrorReply{Code: -1, Message: "You are blacklisted, please contact helpdesk with your details"}
 	}
 	cs.login = login
 	s.registerSession(cs)

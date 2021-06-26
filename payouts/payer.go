@@ -11,9 +11,9 @@ import (
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
 
-	"github.com/zano-mining/open-zano-pool/rpc"
-	"github.com/zano-mining/open-zano-pool/storage"
-	"github.com/zano-mining/open-zano-pool/util"
+	"github.com/hostup/open-zano-pool/rpc"
+	"github.com/hostup/open-zano-pool/storage"
+	"github.com/hostup/open-zano-pool/util"
 )
 
 const txCheckInterval = 5 * time.Second
@@ -29,6 +29,9 @@ type PayoutsConfig struct {
 	Gas          string `json:"gas"`
 	GasPrice     string `json:"gasPrice"`
 	AutoGas      bool   `json:"autoGas"`
+	KeepNwFees   bool   `json:"keepNwFees"`
+	TxGas        string `json:"nwTxGas"`
+	TxGasPrice   string `json:"nwTxGasPrice"`
 	// In Shannon
 	Threshold int64 `json:"threshold"`
 	BgSave    bool  `json:"bgsave"`
@@ -107,7 +110,7 @@ func (u *PayoutsProcessor) Start() {
 }
 
 func (u *PayoutsProcessor) process() {
-  baseFee := uint64(10000000000)
+	baseFee := uint64(10000000000)
   if u.halt {
 		log.Println("Payments suspended due to last critical error:", u.lastFail)
 		return
@@ -121,7 +124,7 @@ func (u *PayoutsProcessor) process() {
 		return
 	}
 
-  xferdests := []rpc.TransferDestination{}
+	xferdests := []rpc.TransferDestination{}
   integdests := make(map[string]rpc.TransferDestination)
   tempAmounts := make(map[string]int64)
   tempAmountsIntegrated := make(map[string]int64)
@@ -132,15 +135,20 @@ func (u *PayoutsProcessor) process() {
       u.lastFail = err
       return
   }
-  
+
 	for _, login := range payees {
 		amount, _ := u.backend.GetBalance(login)
 		amountInShannon := big.NewInt(amount)
 
+		ptresh, _ := u.backend.GetThreshold(login)
+		if ptresh <= 10 {
+			ptresh = u.config.Threshold
+		}
+
 		// Shannon^2 = Wei
 		amountInWei := new(big.Int).Mul(amountInShannon, util.Shannon)
 
-		if !u.reachedThreshold(amountInShannon) {
+		if !u.reachedThreshold(amountInShannon, ptresh) {
 			continue
 		}
 		mustPay++
@@ -150,12 +158,26 @@ func (u *PayoutsProcessor) process() {
 			break
 		}
 
-    value := amountInWei.Uint64()
+		//Calculate the Gas Price in Wei and Computer the Transaction Charges
+		//Since pool honour only mining to wallet and not to contract, Deduct value equal to gas*21000 - Standard cost price
+
+		TxCharges := big.NewInt(0)
+
+		if u.config.KeepNwFees {
+
+			TxCharges.Mul(util.String2Big(u.config.TxGasPrice), util.String2Big(u.config.TxGas))
+
+			//Deduct the Calulated Transaction Charges
+			amountInWei.Sub(amountInWei, TxCharges)
+
+		}
+
+		value := amountInWei.Uint64()
     totalPayoutInWei.Add(totalPayoutInWei, amountInWei)
     var xferdest rpc.TransferDestination
     xferdest.Amount = value
     xferdest.Address = login
-    if strings.HasPrefix(login, "iZ") || strings.HasPrefix(login, "aiZX") {
+		if strings.HasPrefix(login, "iZ") || strings.HasPrefix(login, "aiZX") {
       tempAmountsIntegrated[login] = amount
       // go ahead and remove the tx fee here
       xferdest.Amount = xferdest.Amount - baseFee
@@ -166,8 +188,7 @@ func (u *PayoutsProcessor) process() {
     }
 	}
 
-  if mustPay > 0 {
-    // take care of non-integrated addresses first
+	if mustPay > 0 {
     if poolBalance.Cmp(totalPayoutInWei) < 0 {
       err := fmt.Errorf("Not enough balance for payment, need %s pZano, pool has %s pZano",
       totalPayoutInWei.String(), poolBalance.String())
@@ -175,10 +196,9 @@ func (u *PayoutsProcessor) process() {
       u.lastFail = err
       return
     }
-
-    // split the tx fee evenly over all bulk-tx recipients
+		// split the tx fee evenly over all bulk-tx recipients
     // those first in line are a little unlucky
-    if len(tempAmounts) > 0 {
+		if len(tempAmounts) > 0 {
       nPayees := uint64(len(xferdests))
       feePerPayee := baseFee / nPayees
       feeRemainder := int64(baseFee % nPayees)
@@ -190,119 +210,96 @@ func (u *PayoutsProcessor) process() {
         }
         xferdests[k].Amount = xferdests[k].Amount - feePerPayee - extra
       }
-  
+
       txHash, err := u.rpc_wallet.SendTransaction(xferdests, baseFee, 0)
       if err != nil {
-        log.Printf("Failed to send payment to %v. Check outgoing tx for %s in block explorer and docs/PAYOUTS.md",
-          xferdests, txHash)
-        u.halt = true
-        u.lastFail = err
-        return
-      }
-      for login, amount := range tempAmounts {
-  		  // Lock payments for current payout
-    		err = u.backend.LockPayouts(login, amount)
-     		if err != nil {
-  	  		log.Printf("Failed to lock payment for %s: %v", login, err)
-  		  	u.halt = true
-	  		  u.lastFail = err
-		  	  break
-	  	  }
-	  	  log.Printf("Locked payment for %s, %v Shannon", login, amount)
-
-	  	  // Debit miner's balance and update stats
-   		  err = u.backend.UpdateBalance(login, amount)
-	  	  if err != nil {
-	  		  log.Printf("Failed to update balance for %s, %v Shannon: %v", login, amount, err)
-	  		  u.halt = true
-	  		  u.lastFail = err
-	  		  break
-	  	  }
-
-        // Log transaction hash
-        err = u.backend.WritePayment(login, txHash, amount)
-        if err != nil {
-          log.Printf("Failed to log payment data for %s, %v Shannon, tx: %s: %v", login, amount, txHash, err)
-          u.halt = true
-          u.lastFail = err
-        break
-      }
-    
-        minersPaid++
-        totalAmount.Add(totalAmount, big.NewInt(amount))
-        log.Printf("Paid %v Shannon to Standard Address: %v, TxHash: %v", amount, login, txHash)
-      }
-    }
-  
-    for login, amount := range tempAmountsIntegrated {
-      // Lock payments for current payout
-      err = u.backend.LockPayouts(login, amount)
-      if err != nil {
-        log.Printf("Failed to lock payment for %s: %v", login, err)
-        u.halt = true
-        u.lastFail = err
-        break
-      }
-      log.Printf("Locked payment for %s, %v Shannon", login, amount)
-
-      // Debit miner's balance and update stats
-      err = u.backend.UpdateBalance(login, amount)
-      if err != nil {
-        log.Printf("Failed to update balance for %s, %v Shannon: %v", login, amount, err)
-        u.halt = true
-        u.lastFail = err
-        break
-      }
-  
-      integdest := integdests[login]
-      txHash, err := u.rpc_wallet.SendTransaction([]rpc.TransferDestination{integdest}, baseFee, 0)
-      if err != nil {
-        log.Printf("Failed to send payment to %v. Check outgoing tx for %s in block explorer and docs/PAYOUTS.md",
-          integdest, txHash)
-        u.halt = true
-        u.lastFail = err
-        return
-      }
-
-      // Log transaction hash
-      err = u.backend.WritePayment(login, txHash, amount)
-      if err != nil {
-        log.Printf("Failed to log payment data for %s, %v Shannon, tx: %s: %v", login, amount, txHash, err)
-       u.halt = true
-       u.lastFail = err
-       break
-     }
-
-      minersPaid++
-      totalAmount.Add(totalAmount, big.NewInt(amount))
-      log.Printf("Paid %v Shannon to Integrated Address: %v, TxHash: %v", amount, login, txHash)
-    }
-  }
-  
-  /*
-  for _, login := range payees {
-
-		// Wait for TX confirmation before further payouts
-		for {
-			log.Printf("Waiting for tx confirmation: %v", txHash)
-			time.Sleep(txCheckInterval)
-			receipt, err := u.rpc_wallet.GetTxReceipt(txHash)
+			log.Printf("Failed to send payment to %v. Check outgoing tx for %s in block explorer and docs/PAYOUTS.md",
+				xferdests, txHash)
+			u.halt = true
+			u.lastFail = err
+			return
+		}
+		for login, amount := range tempAmounts {
+			// Lock payments for current payout
+			err = u.backend.LockPayouts(login, amount)
 			if err != nil {
-				log.Printf("Failed to get tx receipt for %v: %v", txHash, err)
-				continue
-			}
-			// Tx has been mined
-			if receipt != nil && receipt.Confirmed() {
-				if receipt.Successful() {
-					log.Printf("Payout tx successful for %s: %s", login, txHash)
-				} else {
-					log.Printf("Payout tx failed for %s: %s. Address contract throws on incoming tx.", login, txHash)
-				}
+				log.Printf("Failed to lock payment for %s: %v", login, err)
+				u.halt = true
+				u.lastFail = err
 				break
 			}
+			log.Printf("Locked payment for %s, %v Shannon", login, amount)
+
+			// Debit miner's balance and update stats
+			err = u.backend.UpdateBalance(login, amount)
+			if err != nil {
+				log.Printf("Failed to update balance for %s, %v Shannon: %v", login, amount, err)
+				u.halt = true
+				u.lastFail = err
+				break
+			}
+
+			// Log transaction hash
+			err = u.backend.WritePayment(login, txHash, amount)
+			if err != nil {
+				log.Printf("Failed to log payment data for %s, %v Shannon, tx: %s: %v", login, amount, txHash, err)
+				u.halt = true
+				u.lastFail = err
+			break
 		}
+
+		minersPaid++
+		totalAmount.Add(totalAmount, big.NewInt(amount))
+		log.Printf("Paid %v Shannon to Standard Address: %v, TxHash: %v", amount, login, txHash)
 	}
-  */
+}
+
+		    for login, amount := range tempAmountsIntegrated {
+		      // Lock payments for current payout
+		      err = u.backend.LockPayouts(login, amount)
+		      if err != nil {
+		        log.Printf("Failed to lock payment for %s: %v", login, err)
+		        u.halt = true
+		        u.lastFail = err
+		        break
+		      }
+		      log.Printf("Locked payment for %s, %v Shannon", login, amount)
+
+					// Debit miner's balance and update stats
+		      err = u.backend.UpdateBalance(login, amount)
+		      if err != nil {
+        log.Printf("Failed to update balance for %s, %v Shannon: %v", login, amount, err)
+		        u.halt = true
+		        u.lastFail = err
+		        break
+		      }
+
+					integdest := integdests[login]
+		      txHash, err := u.rpc_wallet.SendTransaction([]rpc.TransferDestination{integdest}, baseFee, 0)
+		      if err != nil {
+						log.Printf("Failed to send payment to %v. Check outgoing tx for %s in block explorer and docs/PAYOUTS.md",
+		          integdest, txHash)
+		        u.halt = true
+		        u.lastFail = err
+		        return
+		      }
+
+		      // Log transaction hash
+		      err = u.backend.WritePayment(login, txHash, amount)
+		      if err != nil {
+		        log.Printf("Failed to log payment data for %s, %v Shannon, tx: %s: %v", login, amount, txHash, err)
+		       u.halt = true
+		       u.lastFail = err
+		       break
+		     }
+
+		      minersPaid++
+		      totalAmount.Add(totalAmount, big.NewInt(amount))
+		      log.Printf("Paid %v Shannon to Integrated Address: %v, TxHash: %v", amount, login, txHash)
+		    }
+		  }
+
+
 
 	if mustPay > 0 {
 		log.Printf("Paid total %v Shannon to %v of %v payees", totalAmount, minersPaid, mustPay)
@@ -338,8 +335,8 @@ func (self PayoutsProcessor) checkPeers() bool {
 	return true
 }
 
-func (self PayoutsProcessor) reachedThreshold(amount *big.Int) bool {
-	return big.NewInt(self.config.Threshold).Cmp(amount) < 0
+func (self PayoutsProcessor) reachedThreshold(amount *big.Int, threshold int64) bool {
+	return big.NewInt(threshold).Cmp(amount) < 0
 }
 
 func formatPendingPayments(list []*storage.PendingPayment) string {

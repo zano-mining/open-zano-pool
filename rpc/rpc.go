@@ -12,7 +12,8 @@ import (
 	"sync"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/zano-mining/open-zano-pool/util"
+
+	"github.com/hostup/open-zano-pool/util"
 )
 
 type RPCClient struct {
@@ -24,7 +25,6 @@ type RPCClient struct {
 	successRate int
 	client      *http.Client
 }
-
 type WorkRequestParams struct {
   ExtraText     string   `json:"extra_text"`
   WalletAddress string   `json:"wallet_address"`
@@ -56,17 +56,17 @@ type GetBlockHeader struct {
 }
 
 type GetBlockHeaderReply struct {
-  BlockHeader GetBlockHeader `json:"block_header"`  
+  BlockHeader GetBlockHeader `json:"block_header"`
 }
-  
+
 type GetBlockReply struct {
 	Number       string   `json:"number"`
 	Hash         string   `json:"hash"`
 	Nonce        string   `json:"nonce"`
 	Miner        string   `json:"miner"`
-	Difficulty   string   `json:"difficulty"`
-  Reward       uint64   `json:"reward"`
+	Reward       uint64   `json:"reward"`
   OrphanStatus bool     `json:"orphan_status"`
+	Difficulty   string   `json:"difficulty"`
 	GasLimit     string   `json:"gasLimit"`
 	GasUsed      string   `json:"gasUsed"`
 	Transactions []Tx     `json:"transactions"`
@@ -112,11 +112,11 @@ type TransferReply struct {
   TxHash        string `json:"tx_hash"`
   TxUnsignedHex string `json:"tx_unsigned_hex"`
 }
-  
+
 type GetInfoReply struct {
   OutgoingConnections uint64 `json:"outgoing_connections_count"`
 }
-    
+
 type TxReceipt struct {
 	TxHash    string `json:"transactionHash"`
 	GasUsed   string `json:"gasUsed"`
@@ -179,7 +179,6 @@ func (r *RPCClient) GetWork(miner_address string) ([]string, error) {
     util.ToHexUint(replyJson.Height),
     "0x" + replyJson.Blob,
   }
-  
 	return reply, err
 }
 
@@ -189,7 +188,7 @@ func (r * RPCClient) VerifySolution(params []string) (*bool, error) {
     return nil, err
   }
   if rpcResp.Result != nil {
-    reply := new(bool)
+		reply := new(bool)
     *reply, _ = strconv.ParseBool(string(*rpcResp.Result))
     if err != nil {
       return nil, err
@@ -207,14 +206,13 @@ func (r *RPCClient) GetLatestBlock() (*GetBlockReplyPart, error) {
 	if rpcResp.Result != nil {
 		var replyRaw *GetBlockReplyPartRaw
 		err = json.Unmarshal(*rpcResp.Result, &replyRaw)
-    if err != nil {
+		if err != nil {
       return nil, err
     }
     var reply = new(GetBlockReplyPart)
     reply.Number = util.ToHexUint(replyRaw.BlockHeader.Number)
     reply.Difficulty = replyRaw.BlockHeader.Difficulty
     reply.Hash = replyRaw.BlockHeader.Hash
-
 		return reply, err
 	}
 	return nil, nil
@@ -244,15 +242,15 @@ func (r *RPCClient) getBlockBy(method string, params interface{}) (*GetBlockRepl
 		var reply *GetBlockHeaderReply
 		err = json.Unmarshal(*rpcResp.Result, &reply)
 
-    out := new(GetBlockReply)
-    out.Number = util.ToHexUint(reply.BlockHeader.Height)
-    out.Hash = "0x" + reply.BlockHeader.Hash
-    out.Nonce = util.ToHexUintNoPad(reply.BlockHeader.Nonce)
-    out.Miner = ""
-    out.Difficulty = reply.BlockHeader.Difficulty
-    out.Reward = reply.BlockHeader.Reward
-    out.OrphanStatus = reply.BlockHeader.OrphanStatus
-  	return out, err
+		    out := new(GetBlockReply)
+		    out.Number = util.ToHexUint(reply.BlockHeader.Height)
+		    out.Hash = "0x" + reply.BlockHeader.Hash
+		    out.Nonce = util.ToHexUintNoPad(reply.BlockHeader.Nonce)
+		    out.Miner = ""
+		    out.Difficulty = reply.BlockHeader.Difficulty
+		    out.Reward = reply.BlockHeader.Reward
+		    out.OrphanStatus = reply.BlockHeader.OrphanStatus
+		  	return out, err
 	}
 	return nil, nil
 }
@@ -277,7 +275,7 @@ func (r *RPCClient) SubmitBlock(params []string) (bool, error) {
 	}
 	var reply *SubmitBlockReply
 	err = json.Unmarshal(*rpcResp.Result, &reply)
-  if reply.Status == "OK" {
+	if reply.Status == "OK" {
     return true, err
   }
 	return false, err
@@ -334,12 +332,16 @@ func (r *RPCClient) SendTransaction(destinations []TransferDestination, fee uint
   rpcResp, err := r.doPost(r.Url, "transfer", transfer)
 	var reply TransferReply
 	if err != nil {
-		return "0x0", err
+	return "0x0", err
 	}
 	err = json.Unmarshal(*rpcResp.Result, &reply)
 	if err != nil {
-		return "0x0", err
+	return "0x0", err
 	}
+	/* There is an inconsistence in a "standard". Geth returns error if it can't unlock signer account,
+	 * but Parity returns zero hash 0x000... if it can't send tx, so we must handle this case.
+	 * https://github.com/ethereum/wiki/wiki/JSON-RPC#returns-22
+	 */
 	if util.IsZeroHash(reply.TxHash) {
 		err = errors.New("transaction is not yet available")
 	}
@@ -361,7 +363,7 @@ func (r *RPCClient) doPost(url string, method string, params interface{}) (*JSON
 		return nil, err
 	}
 	defer resp.Body.Close()
-  
+
 	var rpcResp *JSONRpcResp
 	err = json.NewDecoder(resp.Body).Decode(&rpcResp)
 	if err != nil {

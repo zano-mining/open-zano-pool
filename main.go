@@ -1,5 +1,3 @@
-// +build go1.9
-
 package main
 
 import (
@@ -13,10 +11,11 @@ import (
 
 	"github.com/yvasiyarov/gorelic"
 
-	"github.com/zano-mining/open-zano-pool/api"
-	"github.com/zano-mining/open-zano-pool/payouts"
-	"github.com/zano-mining/open-zano-pool/proxy"
-	"github.com/zano-mining/open-zano-pool/storage"
+	"github.com/hostup/open-zano-pool/api"
+	"github.com/hostup/open-zano-pool/exchange"
+	"github.com/hostup/open-zano-pool/payouts"
+	"github.com/hostup/open-zano-pool/proxy"
+	"github.com/hostup/open-zano-pool/storage"
 )
 
 var cfg proxy.Config
@@ -39,6 +38,11 @@ func startBlockUnlocker() {
 
 func startPayoutsProcessor() {
 	u := payouts.NewPayoutsProcessor(&cfg.Payouts, backend)
+	u.Start()
+}
+
+func startExchangeProcessor() {
+	u := exchange.StartExchangeProcessor(&cfg.Exchange, backend)
 	u.Start()
 }
 
@@ -82,19 +86,14 @@ func main() {
 
 	startNewrelic()
 
-	backend = storage.NewRedisClient(&cfg.Redis, cfg.Coin)
-	pong, err := backend.CheckLead()
+	backend = storage.NewRedisClient(&cfg.Redis, cfg.Coin, cfg.Pplns, cfg.CoinName)
+	pong, err := backend.Check()
 	if err != nil {
-		log.Printf("Can't establish connection to backend leader: %v", err)
+		log.Printf("Can't establish connection to backend: %v", err)
+		//os.Exit(0)
 	} else {
-		log.Printf("Backend leader check reply: %v", pong)
+		log.Printf("Backend check reply: %v", pong)
 	}
-  pong, err = backend.CheckFollow()
-  if err != nil {
-    log.Printf("Can't establish connection to backend follower: %v", err)
-  } else {
-    log.Printf("Backend follower check reply: %v", pong)
-  }
 
 	if cfg.Proxy.Enabled {
 		go startProxy()
@@ -108,6 +107,11 @@ func main() {
 	if cfg.Payouts.Enabled {
 		go startPayoutsProcessor()
 	}
+
+	if cfg.Exchange.Enabled {
+		go startExchangeProcessor()
+	}
+
 	quit := make(chan bool)
 	<-quit
 }

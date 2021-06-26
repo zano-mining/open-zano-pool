@@ -1,322 +1,374 @@
-## Open Source Zano Mining Pool
+# Ethash-mining-pool
+Highly Efficient mining pool designed for Ethash based coins
+[![Build Status](https://travis-ci.org/hostup/open-zano-pool.svg?branch=V2.0_Eth)](https://travis-ci.org/hostup/open-zano-pool)
 
-![Miner's stats page](https://user-images.githubusercontent.com/1068089/119762891-29b2ce80-be74-11eb-8d9b-20472d69ee48.png)
+
+![alt text](https://raw.githubusercontent.com/hostup/open-zano-pool/master/images/FrontEnd.png)
 
 ### Features
 
-* Support for HTTP and Stratum mining
-* Detailed block stats with luck percentage and full reward
-* Parity nodes rpc failover built in
-* Modern beautiful Ember.js frontend
-* Separate stats for workers: can highlight timed-out workers so miners can perform maintenance of rigs
-* JSON-API for stats
-* kubenetes based deployment for all elements of mining pool for maximum reliability
+**This pool is reegineered from sammy007 open-ethereum-pool for efficiency and for better payment algorithm. This software is functional and tested and implemented in big Mining farms. Testing and bug submissions are still welcome!
 
-#### Proxies (not yet available)
+*	Support for HTTP, SSL, Stratum, Stratum+SSL mining
+*	Detailed block stats with luck percentage and full reward
+*	Failover node instances: high availability built in (Any number of full nodes can be added to the configurations)
+*	Modern beautiful Ember.js frontend for Individual coin statistics vs consolidated coin statistics
+*	Separate stats for workers: can highlight timed-out workers so miners can perform maintenance of rigs
+*	JSON-API for statistics, (Looking for contributor to build app for the pool)
+*	Dynamic PPLNS block reward (*New)
 
-* [Overline-Proxy](https://github.com/sammy007/ether-proxy) HTTP proxy with web interface
-* [Stratum Proxy](https://github.com/Atrides/eth-proxy) for Overline
+### How it is different from sammy007 version
 
-### Bringing a pool up in a linux environment
+*	Reengineered most of the code for efficiency and Scaling
+*	New Dynamic PPLNS Reward System
+*	Integration with the Exchange to get real-time conversion between crypto and fiat.
+*	The Network fees can be configured to be withheld for every transfers.
+*	The gas can be set as Auto and made to deduct automatically or can be fixed by the pool operator
+*	Many parameters configurable using config file
+*	Nicehash support *Not tested
+*	SSL Support built-in
+*	Very attractive frontend with more detailed statistics
+
+
+### Branches
+**Please clone the project using the branches as  per the coin
+
+* V2.0_Eth – Ethereum pool for go version <=1.10
+*	V2.0_Eth_11 -– Ethereum pool for go version >=1.11
+*	V2.0_Etc – Ethereum Classicpool for go version <=1.10
+*	V2.0_Exp – Expanse pool for go version <=1.10
+*	V2.0_Ubiq – Ubiq pool for go version <=1.10
+*	V2.0_Pirl – Pirl pool for go version <=1.10
+*	V2.0_Dbix – Dubai coin pool for go version <=1.10
+*	V2.0_Soil – Soil Coin pool for go version <=1.10
+*	V2.0_Mc – Music Coin pool for go version <=1.10
+*	V2.0_Nuko – Nuko coin - * Not implemented
+
+### Architecture
+
+![Architecture](https://raw.githubusercontent.com/hostup/open-zano-pool/master/images/Architecture.PNG)
+
+
+### Building on Linux
 
 Dependencies:
 
-  * go >= 1.13
-  * zano 
+  * go >= 1.9 but <1.10 ( For 1.11 Refer branches)
+  * geth or parity
   * redis-server >= 2.8.0
-  * nodejs ~ 10 LTS
+  * nodejs >= 4 LTS
   * nginx
-  * kubernetes >= 1.20 (use minikube for local / non-production builds)
 
-**I highly recommend to use Ubuntu 20.04 LTS.**
+**I highly recommend to use Ubuntu 16.04 LTS.**
 
-This whole installation is containerized and comes with a full kubernetes based setup.
-Below we will walk through instructions for running the pool on minikube in a testing environment.
+First install  [go-ethereum](https://github.com/ethereum/go-ethereum/wiki/Installation-Instructions-for-Ubuntu).
+
+Clone & compile:
+
+    git config --global http.https://gopkg.in.followRedirects true
+    git clone https://github.com/hostup/open-zano-pool.git
+    <Change the branch>
+    git pull
+    cd open-ethereum-pool
+    make
+
+Install redis-server.
 
 
-1. Clone this repository `git clone https://github.com/zano-mining/open-zano-pool.git`
+### Building Frontend
 
-2. Install [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl/)
+There are 2 front end application.
+* One for showing the consolidated view of different pool statistics
+* Another for single coin frontend.
 
-3. Install [minikube](https://minikube.sigs.k8s.io/docs/start/#binary-download)
+You may choose your desired one
+To show the statistics for one coin (Front end api) : https://github.com/techievee/statistics_api
+To show the consolidated statistics for all the coins that were implemented : https://github.com/techievee/generalapi
 
-4. Setup secrets:
+The frontend is a single-page Ember.js application that polls the pool API to render miner stats.
+Please refer the frontend application Readme.md for more information. Those frontend are not compliant to sammy007 versions
 
-    ```bash
-    cd open-zano-pool/k8s
-    # NOTE -->  edit the file "config" to contain whatever addresses, http auth passwords, and keys you wish to use
-    ./make-secrets.sh
-    ```
+### DPPLNS ALGORITHM (NEW)
 
-5. Initialize bcnode (you will need a chainstate snapshot saved as a `.tar.gz` file):
+The algorithm explanation is as follows
 
-    ```bash
-    cd open-overline-pool/k8s
-    kubectl apply -f zano/  
-    # once that is done follow the bcnode logs and wait for it to sync
-    kubectl logs $(kubectl get pods | grep zano | awk '{print $1}') -c zano -f --tail 10
-    ```
+* CALCULATING THE LAST N VALUE
+```javascript
+Check whether blockchainnode present
+If present
+	Calulcate the current network difficulty
+	Calulate the network difficulty *2
+	Calculate the N value by (2* Network difficulty)/ Share difficulty
+ 	Set the last N value in the statistics hash key
+Else
+	Fix the predetermined standard ‘N’ value from the block chain
+```
+Space : O(1)
+RunTime : O(1)
 
-6. While the bcnode is syncing, setup redis.
+* ADJUSTING THE ‘N’ SHARES
+```javascript
+Get the current last N value from the lastNshares Hash
+Get the current count of lastNshares list
+If lastNShare< count
+	Loop(count - lastNshare )
+		Pop lastNShare
+		Decrement the miners share count from the lastN value
+    		Decrement the total shares count
+       end
+```
 
-    ```bash
-    kubectl apply -f redis/
-    ```
+Space : O(1)
+RunTime : O(N)
 
-7. Once the bcnode is synced bring open-zano-pool online as follows:
+* NEW SHARE SUBMISSION
+```javascript
+Push the value of miners address into the last shares list
+Increment the current round shares by 1
+Increment the round shares value by 1
+Increment the miners shares by 1
+Check if new block found
+If found
+	Run the New block function
+Else
+Adjust the value of ‘N’ shares
+```
 
-    ```bash
-    kubectl apply -f open-overline-pool/
-    ./local-port-forward.sh
-    ```
+Space : O(1)
+RunTime : O(1)
 
-8. You should now be able to point a browser to `localhost` and see the splash page. You can also test that the pool is accepting jobs by pointing a overline-compatible stratum miner at it.
+* REWARD CALUCLATION USING DPPLNS
+```javascript
+Loop(lastNshare )
+		Get the miners address from list
+Increment the local miners current round share
+       End
+Loop(miners of current round)
+		Percentage= minersshare / current round share
+End
+```
 
-#### Customization
+Space : O(N)
+RunTime : O(N)
 
-You can customize the layout using built-in web server with live reload:
 
-    ember server --port 8082 --environment development
-
-**Don't use built-in web server in production**.
-
-Check out <code>www/app/templates</code> directory and edit these templates
-in order to customise the frontend.
-
-### Configuration
+### Configuration Documentation- Applies to all brnanches
 
 Configuration is actually simple, just read it twice and think twice before changing defaults.
 
-**Don't copy config directly from this manual. Use the example config from the package,
-otherwise you will get errors on start because of JSON comments.**
-
 ```javascript
 {
-  // Set to the number of CPU cores of your server
-  "threads": 2,
-  // Prefix for keys in redis store
-  "coin": "eth",
-  // Give unique name to each instance
-  "name": "main",
+	//Number of Go process to be used for running this software
+	"threads": 2,
+	// Used for prepend Redis instance
+	"coin": "zano",
 
-  "proxy": {
-    "enabled": true,
+	"name": "main",
 
-    // Bind HTTP mining endpoint to this IP:PORT
-    "listen": "0.0.0.0:8888",
+	//Initial N value of the reward, before the round starts
+	"pplns": 1000000,
 
-    // Allow only this header and body size of HTTP request from miners
-    "limitHeadersSize": 1024,
-    "limitBodySize": 256,
+	//Used for fetching the coin value from the Exchange
+	"coin-name":"ETH",
 
-    /* Set to true if you are behind CloudFlare (not recommended) or behind http-reverse
-      proxy to enable IP detection from X-Forwarded-For header.
-      Advanced users only. It's tricky to make it right and secure.
-    */
-    "behindReverseProxy": false,
+	"proxy": {
+	    //Proxy Enabled or not
+		"enabled": false,
 
-    // Stratum mining endpoint
-    "stratum": {
-      "enabled": true,
-      // Bind stratum mining socket to this IP:PORT
-      "listen": "0.0.0.0:8008",
-      "timeout": "120s",
-      "maxConn": 8192,
-      "tls": false,
-      "certFile": "/path/to/cert.pem",
-      "keyFile": "/path/to/key.pem"
-    },
+		//Which HTTP port the mining instance if running
+		"listen": "0.0.0.0:8888",
+		"limitHeadersSize": 1024,
+		"limitBodySize": 256,
 
-    // Try to get new job from node in this interval
-    "blockRefreshInterval": "120ms",
-    "stateUpdateInterval": "3s",
-    // Require this share difficulty from miners
-    "difficulty": 2000000000,
+		//If you are behind reverse proxy then enable, Doesnt work with Cloudflare,Works with Nginx
+		"behindReverseProxy": false,
 
-    /* Reply error to miner instead of job if redis is unavailable.
-      Should save electricity to miners if pool is sick and they didn't set up failovers.
-    */
-    "healthCheck": true,
-    // Mark pool sick after this number of redis failures.
-    "maxFails": 100,
-    // TTL for workers stats, usually should be equal to large hashrate window from API section
-    "hashrateExpiration": "3h",
+		//Can reduce upto 50ms, if you have good configuration server
+		"blockRefreshInterval": "120ms",
+		"stateUpdateInterval": "3s",
 
-    "policy": {
-      "workers": 8,
-      "resetInterval": "60m",
-      "refreshInterval": "1m",
+		//Can be changed according your pool setup, if you have powerful rigs then customize it
+		"difficulty": 4000000000,
 
-      "banning": {
-        "enabled": false,
-        /* Name of ipset for banning.
-        Check http://ipset.netfilter.org/ documentation.
-        */
-        "ipset": "blacklist",
-        // Remove ban after this amount of time
-        "timeout": 1800,
-        // Percent of invalid shares from all shares to ban miner
-        "invalidPercent": 30,
-        // Check after after miner submitted this number of shares
-        "checkThreshold": 30,
-        // Bad miner after this number of malformed requests
-        "malformedLimit": 5
-      },
-      // Connection rate limit
-      "limits": {
-        "enabled": false,
-        // Number of initial connections
-        "limit": 30,
-        "grace": "5m",
-        // Increase allowed number of connections on each valid share
-        "limitJump": 10
-      }
-    }
-  },
+		//The hash rate of miner detoriate slowly in 3 hours
+		"hashrateExpiration": "3h",
 
-  // Provides JSON data for frontend which is static website
-  "api": {
-    "enabled": true,
-    "listen": "0.0.0.0:8080",
-    // Collect miners stats (hashrate, ...) in this interval
-    "statsCollectInterval": "5s",
-    // Purge stale stats interval
-    "purgeInterval": "10m",
-    // Fast hashrate estimation window for each miner from it's shares
-    "hashrateWindow": "30m",
-    // Long and precise hashrate from shares, 3h is cool, keep it
-    "hashrateLargeWindow": "3h",
-    // Collect stats for shares/diff ratio for this number of blocks
-    "luckWindow": [64, 128, 256],
-    // Max number of payments to display in frontend
-    "payments": 50,
-    // Max numbers of blocks to display in frontend
-    "blocks": 50,
+		//Checks the Health of the NOde server
+		"healthCheck": true,
+		"maxFails": 100,
 
-    /* If you are running API node on a different server where this module
-      is reading data from redis writeable slave, you must run an api instance with this option enabled in order to purge hashrate stats from main redis node.
-      Only redis writeable slave will work properly if you are distributing using redis slaves.
-      Very advanced. Usually all modules should share same redis instance.
-    */
-    "purgeOnly": false
-  },
+		//Setting to enable TCP Startum mining, use this always to enable HTTP overhead
+		"stratum": {
+			"enabled": false,
+			"listen": "0.0.0.0:8008",
+			"timeout": "120s",
+			"maxConn": 8192
+		},
 
-  // Check health of each node in this interval
-  "upstreamCheckInterval": "5s",
+		//Nice Hash settings, not tested
+		"stratum_nice_hash": {
+			"enabled": false,
+			"listen": "0.0.0.0:8089",
+			"timeout": "120s",
+			"maxConn": 8192
+		},
 
-  /* List of parity nodes to poll for new jobs. Pool will try to get work from
-    first alive one and check in background for failed to back up.
-    Current block template of the pool is always cached in RAM indeed.
-  */
-  "upstream": [
-    {
-      "name": "main",
-      "url": "http://127.0.0.1:8545",
-      "timeout": "10s"
-    },
-    {
-      "name": "backup",
-      "url": "http://127.0.0.2:8545",
-      "timeout": "10s"
-    }
-  ],
+		//Policy for banning spammers, disable for local mining
+		"policy": {
+			"workers": 8,
+			"resetInterval": "60m",
+			"refreshInterval": "1m",
 
-  // This is standard redis connection options
-  "redis": {
-    // Where your redis instance is listening for commands
-    "leadEndpoint": "redis-leader:6379",
-    "followEndpoint": "redis-follower:6379",
-    "poolSize": 10,
-    "database": 0,
-    "password": ""
-  },
+			"banning": {
+				"enabled": true,
+				//Create a new firewall ipset with the name to make use of it, It bans at OS level
+				"ipset": "blacklist",
+				"timeout": 300,
+				"invalidPercent": 30,
+				"checkThreshold": 30,
+				"malformedLimit": 50
+			},
 
-  // This module periodically remits ether to miners
-  "unlocker": {
-    "enabled": false,
-    // Pool fee percentage
-    "poolFee": 1.0,
-    // Pool fees beneficiary address (leave it blank to disable fee withdrawals)
-    "poolFeeAddress": "",
-    // Donate 10% from pool fees to developers
-    "donate": true,
-    // Unlock only if this number of blocks mined back
-    "depth": 120,
-    // Simply don't touch this option
-    "immatureDepth": 20,
-    // Keep mined transaction fees as pool fees
-    "keepTxFees": false,
-    // Run unlocker in this interval
-    "interval": "10m",
-    // Parity node rpc endpoint for unlocking blocks
-    "daemon": "http://127.0.0.1:8545",
-    // Rise error if can't reach parity
-    "timeout": "10s"
-  },
+			//Limits are used to give grace to new miners for illegal shares.
+			"limits": {
+				"enabled": true,
+				"limit": 30,
+				"grace": "5m",
+				"limitJump": 10
+			}
+		}
+	},
 
-  // Pay out miners using this module
-  "payouts": {
-    "enabled": false,
-    // Require minimum number of peers on node
-    "requirePeers": 25,
-    // Run payouts in this interval
-    "interval": "12h",
-    // Parity node rpc endpoint for payouts processing
-    "daemon": "http://127.0.0.1:8545",
-    // Rise error if can't reach parity
-    "timeout": "10s",
-    // Address with pool balance
-    "address": "0x0",
-    // Let parity to determine gas and gasPrice
-    "autoGas": true,
-    // Gas amount and price for payout tx (advanced users only)
-    "gas": "21000",
-    "gasPrice": "50000000000",
-    // Send payment only if miner's balance is >= 0.5 Ether
-    "threshold": 500000000,
-    // Perform BGSAVE on Redis after successful payouts session
-    "bgsave": false
-  }
+    //These settings are enabled, if you want to enable the API for serving the front end.
+    //You can run the API in seperate node so that the mining are not affected due to frontend load
+
+	"api": {
+		"enabled": false,
+		"purgeOnly": false,
+		"purgeInterval": "10m",
+		"listen": "0.0.0.0:8081",
+
+		//Intervel between the statistics collection
+		"statsCollectInterval": "5s",
+		"hashrateWindow": "30m",
+		"hashrateLargeWindow": "3h",
+
+		//Luck calculation for the window for the last 3 sets of blocks
+		"luckWindow": [64, 128, 256],
+
+		//Total number of payments to be shown in payment history
+		"payments": 30,
+
+		//Total number of blocks to be shown in block history
+		"blocks": 50
+	},
+
+	"upstreamCheckInterval": "5s",
+
+	//Full node of the coin instance
+	"upstream": [
+		//Node 1
+		{
+			"name": "main",
+			"url": "http://localhost:11211/json_rpc",
+			"timeout": "10s"
+		},
+
+		//Node 2
+		{
+			"name": "backup",
+			"url": "http://localhost:11211/json_rpc",
+			"timeout": "10s"
+		}
+	],
+
+    //Redis instances
+	"redis": {
+		"endpoint": "localhost:6379",
+		//Increase the pool size if the load is more
+		"poolSize": 10,
+		"database": 8,
+		"password": ""
+	},
+
+
+//Run the unlocker separately, as this is the critical node from where the rewards are released
+	"unlocker": {
+		"enabled": true,
+
+		//Percentage to be retained as Pool fees
+		"poolFee": 0.99,
+
+		//Where the pool fee need to be transferred, Leave it blank to retain it in pool mining address
+		"poolFeeAddress": "ZxCwg6nmW8QPoa6qZomGwXhP4eUcCLN3waKtyTZkKtsyC9rZwPGo7LC1CGnURw3rPvLzuje86fPNTVZmEJUt6gvR3AhkohMHY",
+
+		"donate": false,
+
+		//Total number of confirmation to be wait before calculating the Rewards share
+		"depth": 120,
+
+		//Yellow signal after confirmation- Immature blocks
+		"immatureDepth": 20,
+
+		//Do you need to retain the network fees?
+		"keepTxFees": false,
+		"interval": "15m",
+		"daemon": "http://127.0.0.1:11211/json_rpc",
+		"timeout": "10s"
+	},
+
+//Run the Payout separately and run when its required, as this is the critical node from where the coin is released
+//The payout address need to be unlocked while running this instance
+	"payouts": {
+		"enabled": false,
+
+		//Number of peers need to be connected before executing the payout
+		"requirePeers": 5,
+		"interval": "120m",
+
+		//Node where the Payout instance is running with payout address unlocked ( BE CAREFUL)
+		"daemon": "http://127.0.0.1:11211/json_rpc",
+		"timeout": "10s",
+
+		//Address from the Rewards are paid
+		"address": "ZxCwg6nmW8QPoa6qZomGwXhP4eUcCLN3waKtyTZkKtsyC9rZwPGo7LC1CGnURw3rPvLzuje86fPNTVZmEJUt6gvR3AhkohMHY",
+
+		//Predefined Gas and GasPrice, if the autogas is not enabled.
+		"gas": "21000",
+		"gasPrice": "20000000000",
+		"autoGas": true,
+
+		//Do you want to retain the Network Fees
+		"keepNwFees": true,
+		"nwTxGas": "21000",
+		"nwTxGasPrice": "20000000000",
+		"threshold": 10000000,
+
+		//Run the bgsave after executing the payment, to save the redis state to disk
+		//bgsave need to be configured in Redis instance
+		"bgsave": false
+	},
+
+//Run this along with the API, to fetch the Converion rates from the coin market
+//Please refer their API for any updates
+	"exchange": {
+		"enabled": false,
+		"url": "https://api.coinmarketcap.com/v1/ticker/?convert=INR",
+		"timeout": "50s",
+		"refreshInterval": "1800s"
+	},
+
+//If you want to use the NewRelic to monitor the server status and the internal status,
+//Register account with NewRelic and update the parameters here
+	"newrelicEnabled": false,
+	"newrelicName": "PROXY01_ETH_main",
+	"newrelicKey": "b71dca87-1476-4a19-a026-2656a954c369",
+	"newrelicVerbose": false
 }
+
+
 ```
 
-If you are distributing your pool deployment to several servers or processes,
-create several configs and disable unneeded modules on each server. (Advanced users)
+### Sample VM Configurations
 
-I recommend this deployment strategy:
-
-* Mining instance - 1x (it depends, you can run one node for EU, one for US, one for Asia)
-* Unlocker and payouts instance - 1x each (strict!)
-* API instance - 1x
-
-### Notes
-
-* Unlocking and payouts are sequential, 1st tx go, 2nd waiting for 1st to confirm and so on. You can disable that in code. Carefully read `docs/PAYOUTS.md`.
-* Also, keep in mind that **unlocking and payouts will halt in case of backend or node RPC errors**. In that case check everything and restart.
-* You must restart module if you see errors with the word *suspended*.
-* Don't run payouts and unlocker modules as part of mining node. Create separate configs for both, launch independently and make sure you have a single instance of each module running.
-* If `poolFeeAddress` is not specified all pool profit will remain on coinbase address. If it specified, make sure to periodically send some dust back required for payments.
-
-### Credits
-
-Originally made by sammy007, modifications for overline and kubernetes by lgray. Licensed under GPLv3.
-
-#### Contributors
-
-[Alex Leverington](https://github.com/subtly)
-
-### Donations are highly appreciated!
-
-ETH/OL: `0xf34fa87db39d15471bebe997860dcd49fc259318`
-
-ZANO: `ZxBuuR83tRxCsXYU2fNiCLGmpinhbCxMj1Swr9vCV2ERjdBsdSYMK6gfBf5bzsGHqpU81xTrKbmHrhiKmiPrz1WL1n2yngUym`
-
-BTC: `13xBjyBFeqiW1eipFGiS1YQvw9HMuAx3bp`
-
-NEO: `AJodL5DbcASbYPNyVBvYNiZnUpyRtqNpJU`
-
-WAV: `3P6Vaod2dVdk9542QhVAroXimR1m6ThXLjh`
-
-LSK: `4823425666801418479L`
-
-Original author ETH: `0xb85150eb365e7df0941f0cf08235f987ba91506a`
+![Configuration](https://raw.githubusercontent.com/hostup/open-zano-pool/master/images/Configurations.PNG)

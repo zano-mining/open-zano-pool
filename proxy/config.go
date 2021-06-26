@@ -1,10 +1,11 @@
 package proxy
 
 import (
-	"github.com/zano-mining/open-zano-pool/api"
-	"github.com/zano-mining/open-zano-pool/payouts"
-	"github.com/zano-mining/open-zano-pool/policy"
-	"github.com/zano-mining/open-zano-pool/storage"
+	"github.com/hostup/open-zano-pool/api"
+	"github.com/hostup/open-zano-pool/exchange"
+	"github.com/hostup/open-zano-pool/payouts"
+	"github.com/hostup/open-zano-pool/policy"
+	"github.com/hostup/open-zano-pool/storage"
 )
 
 type Config struct {
@@ -16,11 +17,15 @@ type Config struct {
 
 	Threads int `json:"threads"`
 
-	Coin  string         `json:"coin"`
-	Redis storage.Config `json:"redis"`
+	Coin     string         `json:"coin"`
+	Pplns    int64          `json:"pplns"`
+	CoinName string         `json:"coin-name"`
+	Redis    storage.Config `json:"redis"`
 
 	BlockUnlocker payouts.UnlockerConfig `json:"unlocker"`
 	Payouts       payouts.PayoutsConfig  `json:"payouts"`
+
+	Exchange exchange.ExchangeConfig `json:"exchange"`
 
 	NewrelicName    string `json:"newrelicName"`
 	NewrelicKey     string `json:"newrelicKey"`
@@ -39,13 +44,15 @@ type Proxy struct {
 	StateUpdateInterval  string `json:"stateUpdateInterval"`
 	HashrateExpiration   string `json:"hashrateExpiration"`
   Address              string `json:"address"`
-
 	Policy policy.Config `json:"policy"`
 
 	MaxFails    int64 `json:"maxFails"`
 	HealthCheck bool  `json:"healthCheck"`
 
-	Stratum Stratum `json:"stratum"`
+	Stratum    Stratum    `json:"stratum"`
+	StratumSSL StratumSSL `json:"stratum_ssl"`
+
+	StratumNiceHash StratumNiceHash `json:"stratum_nice_hash"`
 }
 
 type Stratum struct {
@@ -54,8 +61,24 @@ type Stratum struct {
 	Timeout  string `json:"timeout"`
 	MaxConn  int    `json:"maxConn"`
 	TLS      bool   `json:"tls"`
-	CertFile string `json:"certFile"`
-	KeyFile  string `json:"keyFile"`
+	CertFile string `json:"certfile"`
+	KeyFile  string `json:"certkey"`
+}
+
+type StratumSSL struct {
+	Enabled  bool   `json:"enabled"`
+	Listen   string `json:"listen"`
+	Timeout  string `json:"timeout"`
+	MaxConn  int    `json:"maxConn"`
+	CertFile string `json:"certfile"`
+	CertKey  string `json:"certkey"`
+}
+
+type StratumNiceHash struct {
+	Enabled bool   `json:"enabled"`
+	Listen  string `json:"listen"`
+	Timeout string `json:"timeout"`
+	MaxConn int    `json:"maxConn"`
 }
 
 type Upstream struct {

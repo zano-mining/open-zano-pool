@@ -9,8 +9,7 @@ import (
 
 	"github.com/ethereum/ethash"
 	"github.com/ethereum/go-ethereum/common"
-  "github.com/zano-mining/open-zano-pool/util"
-  
+	"github.com/hostup/open-zano-pool/util"
 )
 
 var hasher = ethash.New()
@@ -22,16 +21,17 @@ func (s *ProxyServer) processShare(login, id, ip string, t *BlockTemplate, param
 	nonce, _ := strconv.ParseUint(strings.Replace(nonceHex, "0x", "", -1), 16, 64)
 	shareDiff := s.config.Proxy.Difficulty
 
-  tempNonce, _ := new(big.Int).SetString(nonceHex[2:], 16)
-  tempNonceStr := []byte(fmt.Sprintf("%#018x", tempNonce)[2:])
-  flipped := make([]byte, 16)
-  for i := 0; i < 16; i += 2 {
-    flipped[16 - i - 1] = tempNonceStr[i + 1]
-    flipped[16 - i - 2] = tempNonceStr[i]
-  }
-  
+	  tempNonce, _ := new(big.Int).SetString(nonceHex[2:], 16)
+	  tempNonceStr := []byte(fmt.Sprintf("%#018x", tempNonce)[2:])
+	  flipped := make([]byte, 16)
+	  for i := 0; i < 16; i += 2 {
+	    flipped[16 - i - 1] = tempNonceStr[i + 1]
+	    flipped[16 - i - 2] = tempNonceStr[i]
+	  }
+
 	h, ok := t.headers[hashNoNonce]
 	if !ok {
+		//TODO:Store stale share in Redis
 		log.Printf("Stale share from %v@%v", login, ip)
 		return false, false
 	}
@@ -52,7 +52,7 @@ func (s *ProxyServer) processShare(login, id, ip string, t *BlockTemplate, param
 		mixDigest:   common.HexToHash(mixDigest),
 	}
 
-  share_params := []string{
+	share_params := []string{
     nonceHex,
     hashNoNonce,
     mixDigest,
@@ -64,12 +64,15 @@ func (s *ProxyServer) processShare(login, id, ip string, t *BlockTemplate, param
   if err != nil {
     log.Printf("Error calling VerifySolution on share!")
   }
-  
+
 	if !*good_share {
 		return false, false
 	}
 
-  block_params := []string{
+	//Write the Ip address into the settings:login:ipaddr and timeit added to settings:login:iptime hash
+	s.backend.LogIP(login,ip)
+
+	block_params := []string{
     nonceHex,
     hashNoNonce,
     mixDigest,
@@ -79,9 +82,9 @@ func (s *ProxyServer) processShare(login, id, ip string, t *BlockTemplate, param
 
   good_block, err := s.rpc().VerifySolution(block_params)
   if err != nil {
-    log.Printf("Error calling VerifySolution on block!")    
+    log.Printf("Error calling VerifySolution on block!")
   }
-    
+
 	if *good_block {
     params := []string{t.Blob[2:4] + string(flipped) + t.Blob[20:]}
 		ok, err := s.rpc().SubmitBlock(params)
@@ -94,7 +97,8 @@ func (s *ProxyServer) processShare(login, id, ip string, t *BlockTemplate, param
 			s.fetchBlockTemplate()
 			exist, err := s.backend.WriteBlock(login, id, block_params[:3], shareDiff, h.diff.Int64(), h.height, s.hashrateExpiration)
 			if exist {
-				return true, false
+
+                                return true, false
 			}
 			if err != nil {
 				log.Println("Failed to insert block candidate into backend:", err)

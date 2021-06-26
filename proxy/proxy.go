@@ -10,13 +10,12 @@ import (
 	"sync/atomic"
 	"time"
   "os"
-
 	"github.com/gorilla/mux"
 
-	"github.com/zano-mining/open-zano-pool/policy"
-	"github.com/zano-mining/open-zano-pool/rpc"
-	"github.com/zano-mining/open-zano-pool/storage"
-	"github.com/zano-mining/open-zano-pool/util"
+	"github.com/hostup/open-zano-pool/policy"
+	"github.com/hostup/open-zano-pool/rpc"
+	"github.com/hostup/open-zano-pool/storage"
+	"github.com/hostup/open-zano-pool/util"
 )
 
 type ProxyServer struct {
@@ -34,6 +33,13 @@ type ProxyServer struct {
 	sessionsMu sync.RWMutex
 	sessions   map[*Session]struct{}
 	timeout    time.Duration
+	Extranonce string
+}
+
+type jobDetails struct {
+	JobID      string
+	SeedHash   string
+	HeaderHash string
 }
 
 type Session struct {
@@ -42,19 +48,21 @@ type Session struct {
 
 	// Stratum
 	sync.Mutex
-	conn  net.Conn
-	login string
+	conn           net.Conn
+	login          string
+	subscriptionID string
+	JobDeatils     jobDetails
 }
 
 func NewProxy(cfg *Config, backend *storage.RedisClient) *ProxyServer {
-  address := os.Getenv(cfg.Proxy.Address)
+	address := os.Getenv(cfg.Proxy.Address)
   if len(address) != 0 && !util.IsValidZanoAddress(address) {
     log.Fatalln("Invalid Miner Address", address)
   }
   cfg.Proxy.Address = address
 
-  log.Printf("Address %v %v", address, cfg.Proxy.Address)
-    
+	  log.Printf("Address %v %v", address, cfg.Proxy.Address)
+
 	if len(cfg.Name) == 0 {
 		log.Fatal("You must set instance name")
 	}
@@ -73,6 +81,11 @@ func NewProxy(cfg *Config, backend *storage.RedisClient) *ProxyServer {
 	if cfg.Proxy.Stratum.Enabled {
 		proxy.sessions = make(map[*Session]struct{})
 		go proxy.ListenTCP()
+	}
+
+	if cfg.Proxy.StratumNiceHash.Enabled {
+		proxy.sessions = make(map[*Session]struct{})
+		go proxy.ListenNiceHashTCP()
 	}
 
 	proxy.fetchBlockTemplate()
@@ -142,6 +155,7 @@ func (s *ProxyServer) Start() {
   r.Handle("/{login:iZ[0-9a-zA-Z]{95,}$}", s)
   r.Handle("/{login:aZx[0-9a-zA-Z]{95,}$}", s)
   r.Handle("/{login:aiZX[0-9a-zA-Z]{95,}$}", s)
+
 	srv := &http.Server{
 		Addr:           s.config.Proxy.Listen,
 		Handler:        r,
@@ -238,7 +252,7 @@ func (cs *Session) handleMessage(s *ProxyServer, r *http.Request, req *JSONRpcRe
 		return
 	}
 	if !s.policy.ApplyLoginPolicy(login, cs.ip) {
-		errReply := &ErrorReply{Code: -1, Message: "You are blacklisted"}
+		errReply := &ErrorReply{Code: -1, Message: "You are blacklisted, please contact helpdesk with your details"}
 		cs.sendError(req.Id, errReply)
 		return
 	}
